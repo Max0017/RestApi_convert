@@ -6,10 +6,13 @@ import zipfile
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from pdf2docx import Converter
+from cheking_file_name import chek_file_name
+from cheking_file_name import chek_file_name
+from register_user import add_file_from_path, get_file
+from cheking_file_name import refactor_name_file
+from starlette.responses import FileResponse, StreamingResponse
 
-
-
-async def post_convert_pdf_to_docx(file):
+async def post_convert_pdf_to_docx(file, user_id):
     try:
         # Создаем временный PDF файл
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
@@ -22,7 +25,8 @@ async def post_convert_pdf_to_docx(file):
         try:
             docx_filename = converter(temp_dir, temp_file_path, file)
             zip_filename = zip_file(temp_dir, docx_filename)
-            return {"message": "Conversion successful", "zip_filename": zip_filename}
+            add_file_from_path(user_id, zip_filename)
+            return {"message": "Conversion successful", "zip_filename": zip_filename,"user_id": user_id}
 
         finally:
             # Удаляем временный PDF файл
@@ -50,24 +54,16 @@ def converter(temp_dir, file_path, file):
 
 
 
-async def get_convert_pdf_to_docx(file_name):
+async def get_convert_pdf_to_docx(file_name, user_id):
     try:
-
-        print(file_name)
-        # Декодируем URL-кодированный путь к файлу
-        decoded_file_name = urllib.parse.unquote(file_name)
-
-        # Проверяем, существует ли файл
-        if not os.path.exists(decoded_file_name):
+        file_data = get_file(user_id, refactor_name_file(file_name))
+        headers = {
+            "Content-Disposition": f"attachment; filename={refactor_name_file(file_name)}"
+        }
+        if file_data:
+            return StreamingResponse(iter([file_data]), media_type="application/zip", headers=headers)
+        else:
             raise HTTPException(status_code=404, detail="File not found")
 
-        # Получаем имя файла из полного пути
-        base_filename = os.path.basename(decoded_file_name)
-        print(base_filename)
-
-        headers = {
-            "Content-Disposition": f"attachment; filename={base_filename}"
-        }
-        return FileResponse(path=decoded_file_name, media_type="application/zip", headers=headers)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
